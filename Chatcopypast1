@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Commodities Widget</title>
+
+<style>
+  body {
+    background: #111;
+    font-family: Arial, sans-serif;
+    color: #fff;
+  }
+  .widget {
+    width: 340px;
+    background: #1c1c1c;
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .item {
+    margin-bottom: 14px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .name {
+    font-weight: bold;
+  }
+  .green { color: #00ff7f; }
+  .red { color: #ff4c4c; }
+  .yellow { color: #ffd700; }
+  .alert {
+    color: #ff9800;
+    font-size: 12px;
+    margin-left: 6px;
+  }
+  svg {
+    width: 100%;
+    height: 40px;
+  }
+</style>
+</head>
+
+<body>
+<div class="widget">
+  <div class="item">
+    <div class="row"><span class="name">Gold</span><span id="gold"></span></div>
+    <svg id="goldChart"></svg>
+  </div>
+  <div class="item">
+    <div class="row"><span class="name">Silver</span><span id="silver"></span></div>
+    <svg id="silverChart"></svg>
+  </div>
+  <div class="item">
+    <div class="row"><span class="name">Oil (WTI)</span><span id="oil"></span></div>
+    <svg id="oilChart"></svg>
+  </div>
+  <div class="item">
+    <div class="row"><span class="name">Natural Gas</span><span id="gas"></span></div>
+    <svg id="gasChart"></svg>
+  </div>
+</div>
+
+<script>
+const API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY";
+
+const commodities = {
+  gold: "GOLD",
+  silver: "SILVER",
+  oil: "WTI",
+  gas: "NATURAL_GAS"
+};
+
+const alerted = {};
+
+if ("Notification" in window) {
+  Notification.requestPermission();
+}
+
+function sparkline(svgId, values, color) {
+  const svg = document.getElementById(svgId);
+  svg.innerHTML = "";
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const points = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * 100;
+    const y = 40 - ((v - min) / (max - min || 1)) * 40;
+    return `${x},${y}`;
+  }).join(" ");
+
+  svg.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="2" points="${points}" />`;
+}
+
+async function fetchCommodity(id, symbol) {
+  const url = `https://www.alphavantage.co/query?function=COMMODITY_INTRADAY&symbol=${symbol}&interval=60min&apikey=${API_KEY}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  const series = data.data;
+  if (!series || series.length < 12) return;
+
+  const current = parseFloat(series[0].value);
+  const prev = parseFloat(series[1].value);
+  const changePct = ((current - prev) / prev) * 100;
+  const history = series.slice(0, 12).map(x => parseFloat(x.value)).reverse();
+
+  let cls = "yellow";
+  if (changePct >= 1) cls = "green";
+  else if (changePct <= -1) cls = "red";
+
+  let alertIcon = "";
+  if (Math.abs(changePct) >= 4 && !alerted[id]) {
+    alerted[id] = true;
+    alertIcon = `<span class="alert">⚠</span>`;
+    if (Notification.permission === "granted") {
+      new Notification(`${symbol} Alert`, {
+        body: `${symbol} moved ${changePct.toFixed(2)}% in the last hour`
+      });
+    }
+  }
+
+  document.getElementById(id).innerHTML =
+    `<span class="${cls}">$${current.toFixed(2)} (${changePct.toFixed(2)}%)</span>${alertIcon}`;
+
+  sparkline(id + "Chart", history, cls === "red" ? "#ff4c4c" : "#00ff7f");
+}
+
+function updateAll() {
+  fetchCommodity("gold", commodities.gold);
+  fetchCommodity("silver", commodities.silver);
+  fetchCommodity("oil", commodities.oil);
+  fetchCommodity("gas", commodities.gas);
+}
+
+updateAll();
+setInterval(updateAll, 60000);
+</script>
+</body>
+</html>
